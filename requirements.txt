@@ -1,0 +1,16 @@
+streamlit
+langgraph
+langchain
+langchain-groq
+langchain-openai
+langchain-community
+langchain-mcp-adapters
+langchain-tavily
+tavily-python
+python-dotenv
+httpx
+requests
+psycopg[binary]
+psycopg-pool
+langgraph-checkpoint-postgres
+pydantic

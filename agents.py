@@ -50,11 +50,10 @@ from mcp_client import (
 from state import TravelState
 
 
-# ============================================================
-# CONSTANTS
-# ============================================================
+# Constants
 
-# max tokens per LLM call (reasoning tokens count against max_tokens)
+
+# Token budgets for individual LLM calls. Reasoning tokens also count here.
 TOKENS_GUARDRAIL = 600
 TOKENS_SUPERVISOR = 1500
 TOKENS_HOTEL = 1800
@@ -82,9 +81,8 @@ ALWAYS_RUN = {
 }
 
 
-# ============================================================
-# GENERAL HELPERS
-# ============================================================
+# General Helpers
+
 
 def _content_to_text(content: Any) -> str:
 
@@ -252,9 +250,8 @@ def _parse_mcp_json(result: Any) -> Any:
         return text
 
 
-# ============================================================
-# REAL-WORLD LOGIC: DATES, MONEY, COSTS, FARES
-# ============================================================
+# Real-World Logic: Dates, Money, Costs, Fares
+
 
 def _parse_iso(value: Any) -> date | None:
 
@@ -398,7 +395,7 @@ def _parse_budget(text: str) -> dict:
     return out
 
 
-# ---------------- Cost of living tiers (heuristic) ----------------
+# Cost of living tiers (heuristic)
 
 COST_TIER_VALUE = {
     "very_high": 1.6,
@@ -490,7 +487,7 @@ def _detect_style(constraints: dict, query: str) -> str:
     return "mid"
 
 
-# ---------------- Airfare heuristics ----------------
+# Airfare heuristics
 
 SEASON_FACTOR = {
     1: 0.92, 2: 0.92, 3: 0.95, 4: 1.0, 5: 1.0, 6: 1.1,
@@ -562,7 +559,7 @@ def _fmt_hours(hours: float) -> str:
     return f"{total_minutes // 60}h {total_minutes % 60:02d}m"
 
 
-# ---------------- Trip cost model ----------------
+# Trip cost model
 
 def _compute_costs(
     style: str,
@@ -612,9 +609,8 @@ def _compute_costs(
     return result
 
 
-# ============================================================
-# REAL-WORLD LOGIC: WEATHER TEXT
-# ============================================================
+# Real-World Logic: Weather Text
+
 
 WMO = {
     0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
@@ -673,9 +669,8 @@ def _packing_advice(
     return tips
 
 
-# ============================================================
-# REAL-WORLD LOGIC: LINKS, CLUSTERING
-# ============================================================
+# Real-World Logic: Links, Clustering
+
 
 def _flight_links(
     o_iata: str,
@@ -824,9 +819,8 @@ def _display_currency(state: TravelState) -> str:
     return (origin.get("country") or {}).get("currency_code", "") or ""
 
 
-# ============================================================
-# INPUT GUARDRAIL
-# ============================================================
+# Input Guardrail
+
 
 def _detect_obvious_injection(query: str) -> bool:
 
@@ -940,9 +934,8 @@ User request:
         return _fallback_guardrail(query)
 
 
-# ============================================================
-# SUPERVISOR AGENT
-# ============================================================
+# Supervisor Agent
+
 
 def _run_supervisor_llm(query: str) -> dict:
 
@@ -1019,6 +1012,7 @@ def _blocked_response(state: TravelState, category: str, reason: str, risk: str 
 
 
 def supervisor_agent(state: TravelState):
+    """Validate the request, extract trip constraints, and choose the agents to run."""
 
     print("\n================ SUPERVISOR ================\n")
 
@@ -1204,9 +1198,8 @@ def supervisor_agent(state: TravelState):
     }
 
 
-# ============================================================
-# DESTINATION AGENT  (places, country, holidays, attractions)
-# ============================================================
+# Destination Agent  (Places, Country, Holidays, Attractions)
+
 
 async def _collect_destination(
     dest: str,
@@ -1278,6 +1271,7 @@ async def _collect_destination(
 
 
 def destination_agent(state: TravelState):
+    """Resolve the destination and collect country, holiday, and attraction data."""
 
     print("\n================ DESTINATION AGENT ================\n")
 
@@ -1324,9 +1318,8 @@ def destination_agent(state: TravelState):
     }
 
 
-# ============================================================
-# FLIGHT AGENT  (airports + distance + estimates + live links)
-# ============================================================
+# Flight Agent  (Airports + Distance + Estimates + Live Links)
+
 
 async def _airports_for(info: dict) -> tuple[list, list]:
 
@@ -1354,6 +1347,7 @@ def _airport_line(a: dict) -> str:
 
 
 def flight_agent(state: TravelState):
+    """Find useful airport options and build transparent flight estimates and links."""
 
     print("\n================ FLIGHT AGENT ================\n")
 
@@ -1568,11 +1562,11 @@ def flight_agent(state: TravelState):
     }
 
 
-# ============================================================
-# HOTEL AGENT  (OSM real hotels + Tavily prices + heuristics)
-# ============================================================
+# Hotel Agent  (Osm Real Hotels + Tavily Prices + Heuristics)
+
 
 def hotel_agent(state: TravelState):
+    """Collect hotel-area information and clearly label any price estimates."""
 
     print("\n================ HOTEL AGENT ================\n")
 
@@ -1732,9 +1726,8 @@ RULES
     }
 
 
-# ============================================================
-# WEATHER AGENT  (Open-Meteo forecast + climate normals)
-# ============================================================
+# Weather Agent  (Open-Meteo Forecast + Climate Normals)
+
 
 async def _weather_data(lat: float, lon: float, dep: date, ret: date):
 
@@ -1768,6 +1761,7 @@ async def _weather_data(lat: float, lon: float, dep: date, ret: date):
 
 
 def weather_agent(state: TravelState):
+    """Collect forecast and climate information for the planned destination."""
 
     print("\n================ WEATHER AGENT ================\n")
 
@@ -1917,11 +1911,11 @@ def weather_agent(state: TravelState):
     }
 
 
-# ============================================================
-# BUDGET AGENT  (deterministic, real-world cost model)
-# ============================================================
+# Budget Agent  (Deterministic, Real-World Cost Model)
+
 
 def budget_agent(state: TravelState):
+    """Calculate the trip budget from deterministic cost assumptions."""
 
     print("\n================ BUDGET AGENT ================\n")
 
@@ -1994,6 +1988,9 @@ def budget_agent(state: TravelState):
         "rate": fx["rate"] if fx else None,
         "total_usd": total,
         "per_day_usd": (total["mid"] - costs["flights"]["mid"] * 1.07) / max(days, 1),
+        "budget_feasible": None,
+        "minimum_realistic_usd": total["low"],
+        "budget_shortfall_usd": None,
     }
 
     # ---------------- budget feasibility ----------------
@@ -2034,18 +2031,24 @@ def budget_agent(state: TravelState):
 
             if mid <= 0.85 * budget_usd:
                 verdict = "Comfortably within your budget."
+                numbers["budget_feasible"] = True
             elif mid <= 1.05 * budget_usd:
                 verdict = "Feasible, but tight. Little room for extras."
+                numbers["budget_feasible"] = True
             elif low <= budget_usd:
                 verdict = (
                     "Possible only with careful choices (lower end of the estimate). "
                     f"The typical cost is about {(mid / budget_usd - 1) * 100:.0f}% above your budget."
                 )
+                numbers["budget_feasible"] = True
             else:
+                shortfall = low - budget_usd
                 verdict = (
                     "Not realistic as stated: even the low estimate is about "
-                    f"{_fmt_money(low - budget_usd, fx)} above your budget."
+                    f"{_fmt_money(shortfall, fx)} above your budget."
                 )
+                numbers["budget_feasible"] = False
+                numbers["budget_shortfall_usd"] = shortfall
 
             lines.append(f"- **Verdict:** {verdict}")
 
@@ -2076,6 +2079,7 @@ def budget_agent(state: TravelState):
 
             numbers["budget_usd"] = budget_usd
             numbers["verdict"] = verdict
+            numbers["minimum_realistic_usd"] = low
 
     else:
         lines.append("- No budget was given, so no comparison was made. The estimate above is a typical cost.")
@@ -2124,9 +2128,8 @@ def budget_agent(state: TravelState):
     }
 
 
-# ============================================================
-# ITINERARY AGENT  (LLM writes; code supplies real data)
-# ============================================================
+# Itinerary Agent  (Llm Writes; Code Supplies Real Data)
+
 
 def _itinerary_context(state: TravelState) -> str:
 
@@ -2182,11 +2185,41 @@ def _itinerary_context(state: TravelState) -> str:
 
 
 def itinerary_agent(state: TravelState):
+    """Turn the collected travel data into a day-by-day draft itinerary."""
 
     print("\n================ ITINERARY AGENT ================\n")
 
     c = state.get("trip_constraints", {})
+    budget_numbers = state.get("budget_numbers", {}) or {}
     days = c.get("duration_days") or 0
+
+    # The budget agent performs the numerical feasibility check. If the
+    # requested amount is below the low-end estimate, do not let the LLM
+    # generate an itinerary that falsely suggests the trip is affordable.
+    if budget_numbers.get("budget_feasible") is False:
+        budget = c.get("budget") or "the requested budget"
+        minimum = budget_numbers.get("minimum_realistic_usd")
+        shortfall = budget_numbers.get("budget_shortfall_usd")
+
+        minimum_text = f"USD {minimum:,.0f}" if minimum is not None else "the low-end estimate"
+        shortfall_text = f"USD {shortfall:,.0f}" if shortfall is not None else "the estimated shortfall"
+
+        result = (
+            "### Budget feasibility warning\n"
+            f"- The requested budget (**{budget}**) is **not sufficient** for this trip.\n"
+            f"- Even the low-end estimate is about **{minimum_text}**.\n"
+            f"- The estimated shortfall is about **{shortfall_text}**.\n"
+            "- I have not generated a normal day-by-day itinerary because that would be misleading.\n"
+            "- Increase the budget, reduce the trip duration, reduce the number of travelers, or choose a closer destination."
+        )
+
+        print("Budget infeasible; itinerary generation skipped.")
+        return {
+            "itinerary": result,
+            "approval_request": "The requested budget is not feasible. Please change the budget or trip constraints before approving.",
+            "messages": [AIMessage(content="Itinerary skipped because the requested budget is infeasible.")],
+        }
+
     revision = state.get("revision_count", 0)
     previous = state.get("itinerary", "")
     feedback = state.get("human_feedback", "")
@@ -2274,11 +2307,11 @@ RULES
     }
 
 
-# ============================================================
-# HUMAN APPROVAL  (loops back to itinerary on rejection)
-# ============================================================
+# Human Approval  (Loops Back To Itinerary On Rejection)
+
 
 def human_approval_agent(state: TravelState):
+    """Pause for human review and capture approval or revision feedback."""
 
     print("\n================ HUMAN APPROVAL ================\n")
 
@@ -2313,9 +2346,8 @@ def human_approval_agent(state: TravelState):
     }
 
 
-# ============================================================
-# FINAL RESPONSE  (deterministic assembly, no LLM)
-# ============================================================
+# Final Response  (Deterministic Assembly, No Llm)
+
 
 def _dedupe(items: list[str]) -> list[str]:
 
@@ -2330,6 +2362,7 @@ def _dedupe(items: list[str]) -> list[str]:
 
 
 def final_response_agent(state: TravelState):
+    """Assemble the final travel response without another LLM call."""
 
     print("\n================ FINAL RESPONSE AGENT ================\n")
 
@@ -2368,6 +2401,15 @@ def final_response_agent(state: TravelState):
         )
 
     lines += summary
+
+    budget_numbers = state.get("budget_numbers", {}) or {}
+    if budget_numbers.get("budget_feasible") is False:
+        lines += [
+            "",
+            "## ⚠️ Budget feasibility",
+            "**This trip is not feasible at the requested budget.** The planner deliberately did not generate a normal day-by-day itinerary because that would be misleading.",
+            "Increase the budget, shorten the trip, reduce the number of travelers, or choose a closer destination.",
+        ]
 
     sections = [
         ("✈️ Flights", state.get("flight_results", "")),

@@ -1,3 +1,5 @@
+"""Build and compile the LangGraph travel-planning workflow."""
+
 import psycopg
 
 from langgraph.checkpoint.memory import MemorySaver
@@ -16,18 +18,9 @@ from agents import (
     supervisor_agent,
     weather_agent,
 )
-
 from config import DATABASE_URL
-
 from state import TravelState
 
-
-# ============================================================
-# AGENT ORDER
-# ============================================================
-# destination first (places, holidays, attractions), then flights
-# (needs airports), hotels, weather, budget (needs the flight
-# estimate), itinerary (needs everything).
 
 AGENT_ORDER = [
     "destination_agent",
@@ -38,44 +31,31 @@ AGENT_ORDER = [
     "itinerary_agent",
 ]
 
-
 ROUTE_MAP = {name: name for name in AGENT_ORDER}
 ROUTE_MAP["__end__"] = END
 
 
-# ============================================================
-# SELECTED AGENTS
-# ============================================================
-
 def _selected_agents(state: TravelState) -> list[str]:
-
+    """Return selected agents in the fixed workflow order."""
     selected = state.get("selected_agents", [])
-
     if not isinstance(selected, list):
         return []
-
     return [agent for agent in AGENT_ORDER if agent in selected]
 
 
-# ============================================================
-# ROUTERS
-# ============================================================
-
 def route_from_supervisor(state: TravelState) -> str:
-
-    # Input guardrail / missing destination -> stop the graph.
+    """Choose the first agent after supervisor planning."""
     if state.get("guardrail_blocked", False):
         return "__end__"
 
     selected = _selected_agents(state)
-
     return selected[0] if selected else "itinerary_agent"
 
 
 def route_after_agent(current_agent: str):
+    """Create a router that finds the next selected agent."""
 
     def route(state: TravelState) -> str:
-
         selected = _selected_agents(state)
 
         try:
@@ -93,13 +73,7 @@ def route_after_agent(current_agent: str):
 
 
 def route_after_approval(state: TravelState) -> str:
-    """
-    Approved                      -> final response
-    Rejected (revisions left)     -> itinerary agent revises with feedback,
-                                     then the human reviews again
-    Rejected (no revisions left)  -> final response with the latest draft
-    """
-
+    """Continue to the final response or request another itinerary revision."""
     if state.get("approved", False):
         return "final_response"
 
@@ -109,18 +83,8 @@ def route_after_approval(state: TravelState) -> str:
     return "final_response"
 
 
-# ============================================================
-# CHECKPOINTER
-# ============================================================
-
 def _build_checkpointer():
-    """
-    interrupt() REQUIRES a checkpointer.
-
-    - DATABASE_URL set  -> PostgresSaver (connection pool if available)
-    - otherwise / error -> MemorySaver (works while the process is alive)
-    """
-
+    """Create a PostgreSQL checkpointer when configured, otherwise use memory."""
     if not DATABASE_URL:
         print("DATABASE_URL not set. Using in-memory checkpointer.")
         return MemorySaver()
@@ -128,7 +92,6 @@ def _build_checkpointer():
     try:
         from psycopg.rows import dict_row
 
-        # PostgresSaver requires BOTH autocommit=True and row_factory=dict_row.
         conn_kwargs = {
             "autocommit": True,
             "row_factory": dict_row,
@@ -144,16 +107,12 @@ def _build_checkpointer():
                 kwargs=conn_kwargs,
                 open=True,
             )
-
             checkpointer = PostgresSaver(pool)
-
         except ImportError:
-            # pip install "psycopg[pool]" for the thread-safe pool.
             conn = psycopg.connect(DATABASE_URL, **conn_kwargs)
             checkpointer = PostgresSaver(conn)
 
         checkpointer.setup()
-
         return checkpointer
 
     except Exception as exc:
@@ -162,15 +121,10 @@ def _build_checkpointer():
         return MemorySaver()
 
 
-# ============================================================
-# BUILD GRAPH
-# ============================================================
-
 def build_graph():
-
+    """Build the travel workflow and attach its checkpointer."""
     graph = StateGraph(TravelState)
 
-    # ---------------- Nodes ----------------
     graph.add_node("supervisor", supervisor_agent)
     graph.add_node("destination_agent", destination_agent)
     graph.add_node("flight_agent", flight_agent)
@@ -181,10 +135,7 @@ def build_graph():
     graph.add_node("human_approval", human_approval_agent)
     graph.add_node("final_response", final_response_agent)
 
-    # ---------------- START ----------------
     graph.add_edge(START, "supervisor")
-
-    # ---------------- Routing ----------------
     graph.add_conditional_edges("supervisor", route_from_supervisor, ROUTE_MAP)
 
     for name in (
@@ -200,10 +151,8 @@ def build_graph():
             ROUTE_MAP,
         )
 
-    # ---------------- Itinerary -> Human approval ----------------
     graph.add_edge("itinerary_agent", "human_approval")
 
-    # ---------------- Approval loop ----------------
     graph.add_conditional_edges(
         "human_approval",
         route_after_approval,
@@ -217,9 +166,5 @@ def build_graph():
 
     return graph.compile(checkpointer=_build_checkpointer())
 
-
-# ============================================================
-# APPLICATION
-# ============================================================
 
 app = build_graph()
